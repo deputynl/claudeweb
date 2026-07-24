@@ -97,12 +97,12 @@ async function loadProjects() {
 // through /term/ and /shell/) means we can reach into it and inject our own
 // styling: scrollbars to match the rest of the app, and a @font-face for the
 // terminal font. The latter matters because ttyd is started with
-// fontFamily="'DejaVu Sans Mono', monospace" (see ttydManager.js) but that
-// name is only meaningful if the same font is actually loaded in this
-// document - without it, each client's browser would fall back to whatever
-// "DejaVu Sans Mono" (or its next fallback) resolves to locally, which is
-// exactly the kind of per-client font substitution that causes glyph/
-// cell-width mismatches.
+// fontFamily="'DejaVuSansM Nerd Font Mono', monospace" (see ttydManager.js)
+// but that name is only meaningful if the same font is actually loaded in
+// this document - without it, each client's browser would fall back to
+// whatever "DejaVuSansM Nerd Font Mono" (or its next fallback) resolves to
+// locally, which is exactly the kind of per-client font substitution that
+// causes glyph/cell-width mismatches.
 function styleTerminalFrame(iframe) {
   iframe.addEventListener('load', () => {
     let doc;
@@ -115,26 +115,26 @@ function styleTerminalFrame(iframe) {
     const style = doc.createElement('style');
     style.textContent = `
       @font-face {
-        font-family: 'DejaVu Sans Mono';
-        src: url('/vendor/fonts/dejavu-sans-mono/DejaVuSansMono.ttf') format('truetype');
+        font-family: 'DejaVuSansM Nerd Font Mono';
+        src: url('/vendor/dejavu-sans-mono-nerd-font/DejaVuSansMNerdFontMono-Regular.ttf') format('truetype');
         font-weight: normal;
         font-style: normal;
       }
       @font-face {
-        font-family: 'DejaVu Sans Mono';
-        src: url('/vendor/fonts/dejavu-sans-mono/DejaVuSansMono-Bold.ttf') format('truetype');
+        font-family: 'DejaVuSansM Nerd Font Mono';
+        src: url('/vendor/dejavu-sans-mono-nerd-font/DejaVuSansMNerdFontMono-Bold.ttf') format('truetype');
         font-weight: bold;
         font-style: normal;
       }
       @font-face {
-        font-family: 'DejaVu Sans Mono';
-        src: url('/vendor/fonts/dejavu-sans-mono/DejaVuSansMono-Oblique.ttf') format('truetype');
+        font-family: 'DejaVuSansM Nerd Font Mono';
+        src: url('/vendor/dejavu-sans-mono-nerd-font/DejaVuSansMNerdFontMono-Oblique.ttf') format('truetype');
         font-weight: normal;
         font-style: italic;
       }
       @font-face {
-        font-family: 'DejaVu Sans Mono';
-        src: url('/vendor/fonts/dejavu-sans-mono/DejaVuSansMono-BoldOblique.ttf') format('truetype');
+        font-family: 'DejaVuSansM Nerd Font Mono';
+        src: url('/vendor/dejavu-sans-mono-nerd-font/DejaVuSansMNerdFontMono-BoldOblique.ttf') format('truetype');
         font-weight: bold;
         font-style: italic;
       }
@@ -160,7 +160,7 @@ function styleTerminalFrame(iframe) {
     // remeasures and repaints with correct metrics instead of leaving
     // stale, fallback-font-derived column widths in place.
     if (doc.fonts && doc.fonts.load) {
-      doc.fonts.load("16px 'DejaVu Sans Mono'").catch(() => {}).then(() => {
+      doc.fonts.load("16px 'DejaVuSansM Nerd Font Mono'").catch(() => {}).then(() => {
         try {
           iframe.contentWindow.dispatchEvent(new Event('resize'));
         } catch (e) {
