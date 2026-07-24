@@ -93,6 +93,39 @@ async function loadProjects() {
   }
 }
 
+// ttyd serves its own document into these iframes, but same-origin (proxied
+// through /term/ and /shell/) means we can reach into it and inject our
+// scrollbar styling so the terminal matches the rest of the app instead of
+// showing the browser's default scrollbar.
+function styleTerminalScrollbar(iframe) {
+  iframe.addEventListener('load', () => {
+    let doc;
+    try {
+      doc = iframe.contentDocument;
+    } catch (e) {
+      return; // not same-origin (e.g. about:blank in some browsers) - skip
+    }
+    if (!doc || !doc.head) return;
+    const style = doc.createElement('style');
+    style.textContent = `
+      * { scrollbar-width: thin; scrollbar-color: #3e3d38 transparent; }
+      *::-webkit-scrollbar { width: 10px; height: 10px; }
+      *::-webkit-scrollbar-track { background: transparent; }
+      *::-webkit-scrollbar-thumb {
+        background-color: #3e3d38;
+        border-radius: 6px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+      *::-webkit-scrollbar-thumb:hover { background-color: #7a7870; background-clip: padding-box; }
+      *::-webkit-scrollbar-corner { background: transparent; }
+    `;
+    doc.head.appendChild(style);
+  });
+}
+styleTerminalScrollbar(document.getElementById('claude-frame'));
+styleTerminalScrollbar(document.getElementById('shell-frame'));
+
 let currentTab = 'claude';
 
 async function selectProject(name) {
