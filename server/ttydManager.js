@@ -67,6 +67,30 @@ async function getOrStartSession(project, kind = 'claude') {
     '-W',
     '-t', 'disableLeaveAlert=true',
     '-t', 'fontSize=16',
+    // Claude Code's TUI leans on box-drawing borders and a Braille spinner;
+    // most fallback monospace fonts are missing one or the other, and the
+    // browser silently substituting a different font for those glyphs is
+    // what causes corner artifacts on the input box border and misaligned
+    // characters. DejaVu Sans Mono has full coverage of both, so nothing
+    // falls back - it's vendored locally and loaded into the iframe in
+    // app.js. Quoting only the multi-word name (not the whole value, comma
+    // included) matters: `'DejaVu Sans Mono', monospace` is a real font
+    // list, `'DejaVu Sans Mono, monospace'` is one bogus family name that
+    // resolves to nothing.
+    '-t', "fontFamily='DejaVu Sans Mono', monospace",
+    // xterm's default unicode width table treats a handful of codepoints
+    // Claude Code emits (spinner, prompt-box corners) as ambiguous-width,
+    // which desyncs column math from what the underlying terminal (and
+    // tmux) computed - the visible symptom being shifted/misplaced
+    // characters right after those glyphs, worst at the start of the next
+    // line. The Unicode11Addon's table fixes that. This is ttyd's own
+    // default already, set explicitly so behavior doesn't drift if that
+    // default ever changes upstream.
+    '-t', 'unicodeVersion=11',
+    // WebGL (ttyd's default renderer) and canvas rasterize box-drawing/
+    // custom glyphs slightly differently; canvas is the safer choice when
+    // border-corner artifacts are the specific complaint.
+    '-t', 'rendererType=canvas',
     ...tmuxArgs,
   ], { stdio: 'inherit' });
 
