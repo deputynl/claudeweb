@@ -1,5 +1,9 @@
 FROM node:20-slim
 
+LABEL org.opencontainers.image.source="https://github.com/deputynl/claudeweb"
+LABEL org.opencontainers.image.description="A small self-hosted web UI for Claude Code"
+LABEL org.opencontainers.image.licenses="MIT"
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
       curl ca-certificates tmux openssh-client nano \
     && curl -fsSL https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64 -o /usr/local/bin/ttyd \
