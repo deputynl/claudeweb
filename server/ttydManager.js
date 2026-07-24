@@ -62,11 +62,22 @@ async function getOrStartSession(project, kind = 'claude') {
   // tmux new-session -A: attach if a session with this name already exists,
   // otherwise create it. This is what makes reconnects survive dropped
   // connections - only the terminal view goes away, not the underlying process.
+  // Explicit fontFamily so Claude Code's box-drawing banner and prompt glyph
+  // (neither of which is plain ASCII) don't fall back to tofu/underscore
+  // placeholders when the browser's default monospace font lacks them.
+  // DejaVu Sans Mono has the broadest Unicode coverage (box drawing, braille
+  // spinners, symbols) of any common monospace font and ships by default on
+  // most Linux desktops; the fallbacks cover Windows Terminal (Cascadia),
+  // classic Windows (Consolas) and macOS (Menlo) in case DejaVu isn't
+  // installed client-side.
+  const FONT_FAMILY = '"DejaVu Sans Mono", "Cascadia Mono", "Cascadia Code", Consolas, Menlo, monospace';
+
   const proc = spawn('ttyd', [
     '-p', String(port),
     '-W',
     '-t', 'disableLeaveAlert=true',
     '-t', 'fontSize=16',
+    '-t', `fontFamily=${FONT_FAMILY}`,
     ...tmuxArgs,
   ], { stdio: 'inherit' });
 
