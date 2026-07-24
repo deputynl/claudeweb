@@ -10,6 +10,8 @@ browser/editor tab with syntax highlighting and a Markdown preview. No git
 required, no external project registry — a project is just an immediate
 subfolder of the mounted workspace.
 
+![Screenshot of Claude Code Hub, showing a project sidebar and a Claude Code terminal session (mocked-up demo content)](public/screenshot.png)
+
 ## How it works
 
 - **Hub app** (`server/index.js`): serves the UI, the project list, the file
