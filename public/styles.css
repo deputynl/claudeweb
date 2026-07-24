@@ -83,7 +83,22 @@ body {
 .tab-btn { background: none; border: none; color: var(--text-dim); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
 .tab-btn:hover { color: var(--text); }
 .tab-btn.active { background: var(--bg-panel); color: var(--text); }
-#current-project { margin-left: auto; color: var(--text-faint); font-size: 12px; }
+#font-size-controls { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+#font-size-controls button {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+#font-size-controls button:hover { background: var(--bg-panel); color: var(--text); }
+#font-size-controls button:disabled { color: var(--text-faint); cursor: default; background: none; }
+#font-size-value { color: var(--text-faint); font-size: 12px; width: 2ch; text-align: center; }
+#current-project { margin-left: 12px; color: var(--text-faint); font-size: 12px; }
 
 .tab-panel { flex: 1; min-height: 0; display: flex; }
 .tab-panel[hidden] { display: none; }

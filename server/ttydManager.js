@@ -67,8 +67,31 @@ async function getOrStartSession(project, kind = 'claude') {
     '-W',
     '-t', 'disableLeaveAlert=true',
     '-t', 'fontSize=16',
+    // Vendored so terminal text renders identically regardless of what's
+    // installed client-side, matched by the @font-face injected into the
+    // iframe in app.js - not what fixes box-drawing corners (that's the
+    // LANG fix below; xterm's own vector renderer draws those once real
+    // Unicode is flowing, independent of font). Plain DejaVu Sans Mono, not
+    // a Nerd Font build: Claude Code's TUI doesn't use PUA/Nerd Font icon
+    // codepoints. ttyd drops everything after the first comma in a -t
+    // value, so no ", monospace" fallback here - it would be a no-op.
+    '-t', "fontFamily='DejaVu Sans Mono'",
     ...tmuxArgs,
-  ], { stdio: 'inherit' });
+  ], {
+    stdio: 'inherit',
+    // Without a UTF-8 locale, Claude Code's TUI can't confirm the terminal
+    // supports Unicode and falls back to a degraded ASCII/VT100-line-drawing
+    // rendering for box borders: a literal "_" for each corner plus DEC
+    // Special Graphics line-drawing bytes, instead of real "╭─╮" etc
+    // (confirmed by inspecting the raw pty output over the websocket). That
+    // fallback's corners never actually look like corners in xterm.js - an
+    // underscore glyph (drawn at the font's baseline) and a separately
+    // vector-drawn horizontal line (drawn at the cell's vertical center)
+    // don't visually connect, regardless of font/renderer. node:20-slim has
+    // no locale configured at all (`locale -a` only lists C/C.utf8/POSIX)
+    // and doesn't need one installed - C.utf8 is already there, just unused.
+    env: { ...process.env, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' },
+  });
 
   proc.on('exit', (code) => {
     console.log(`ttyd for project "${project}" (${kind}) exited (code ${code})`);

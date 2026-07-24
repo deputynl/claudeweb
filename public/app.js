@@ -94,10 +94,19 @@ async function loadProjects() {
 }
 
 // ttyd serves its own document into these iframes, but same-origin (proxied
-// through /term/ and /shell/) means we can reach into it and inject our
-// scrollbar styling so the terminal matches the rest of the app instead of
-// showing the browser's default scrollbar.
-function styleTerminalScrollbar(iframe) {
+// through /term/ and /shell/) means we can reach into it and inject our own
+// styling: scrollbars to match the rest of the app, and a @font-face for the
+// terminal font. The latter matters because ttyd is started with
+// fontFamily='DejaVu Sans Mono' (see ttydManager.js) but that name is only
+// meaningful if the same font is actually loaded in this document -
+// otherwise each client falls back to whatever "DejaVu Sans Mono"/monospace
+// resolves to locally. This keeps regular terminal text consistent across
+// clients; it's not what makes Claude Code's box-drawing panel borders
+// render correctly (that depends on the container having a UTF-8 locale -
+// see the LANG/LC_ALL comment in ttydManager.js - once real Unicode box
+// characters are sent, xterm's own vector renderer draws them regardless
+// of font).
+function styleTerminalFrame(iframe) {
   iframe.addEventListener('load', () => {
     let doc;
     try {
@@ -108,6 +117,31 @@ function styleTerminalScrollbar(iframe) {
     if (!doc || !doc.head) return;
     const style = doc.createElement('style');
     style.textContent = `
+      @font-face {
+        font-family: 'DejaVu Sans Mono';
+        src: url('/vendor/fonts/dejavu-sans-mono/DejaVuSansMono.woff2') format('woff2');
+        font-weight: normal;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: 'DejaVu Sans Mono';
+        src: url('/vendor/fonts/dejavu-sans-mono/DejaVuSansMono-Bold.woff2') format('woff2');
+        font-weight: bold;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: 'DejaVu Sans Mono';
+        src: url('/vendor/fonts/dejavu-sans-mono/DejaVuSansMono-Oblique.woff2') format('woff2');
+        font-weight: normal;
+        font-style: italic;
+      }
+      @font-face {
+        font-family: 'DejaVu Sans Mono';
+        src: url('/vendor/fonts/dejavu-sans-mono/DejaVuSansMono-BoldOblique.woff2') format('woff2');
+        font-weight: bold;
+        font-style: italic;
+      }
+
       * { scrollbar-width: thin; scrollbar-color: #3e3d38 transparent; }
       *::-webkit-scrollbar { width: 10px; height: 10px; }
       *::-webkit-scrollbar-track { background: transparent; }
@@ -121,10 +155,79 @@ function styleTerminalScrollbar(iframe) {
       *::-webkit-scrollbar-corner { background: transparent; }
     `;
     doc.head.appendChild(style);
+
+    // xterm.js (inside ttyd's iframe) measures its own cell/column metrics
+    // against whatever font is actually loaded at that moment, which can
+    // race ahead of the @font-face fetch above. Explicitly request the
+    // font and wait for the document's whole font-load queue to settle
+    // (not a fixed delay) before forcing a resize, so xterm's fit addon
+    // remeasures and repaints using the vendored font's real metrics
+    // instead of stale ones from a fallback font.
+    if (doc.fonts) {
+      doc.fonts.load("16px 'DejaVu Sans Mono'").catch(() => {});
+      doc.fonts.ready.then(() => {
+        try {
+          iframe.contentWindow.dispatchEvent(new Event('resize'));
+        } catch (e) {
+          // iframe navigated away already - nothing to fix up
+        }
+      });
+    }
   });
 }
-styleTerminalScrollbar(document.getElementById('claude-frame'));
-styleTerminalScrollbar(document.getElementById('shell-frame'));
+styleTerminalFrame(document.getElementById('claude-frame'));
+styleTerminalFrame(document.getElementById('shell-frame'));
+
+// --- Terminal font size ---
+// ttyd reads `fontSize` (and other ITerminalOptions keys) from the iframe
+// URL's query string as a per-client override - see parseOptsFromUrlQuery in
+// ttyd's bundled frontend. That's the officially supported way to set it;
+// there's no other reach-in point since ttyd's Terminal instance isn't
+// exposed on the iframe's window.
+const FONT_SIZE_KEY = 'claudeweb.terminalFontSize';
+const FONT_SIZE_MIN = 10;
+const FONT_SIZE_MAX = 28;
+const FONT_SIZE_DEFAULT = 16;
+const FONT_SIZE_STEP = 2;
+
+function getFontSize() {
+  const stored = parseInt(localStorage.getItem(FONT_SIZE_KEY), 10);
+  if (Number.isNaN(stored)) return FONT_SIZE_DEFAULT;
+  return Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, stored));
+}
+
+function terminalUrl(basePath) {
+  return `${basePath}?fontSize=${getFontSize()}`;
+}
+
+function updateFontSizeDisplay() {
+  const size = getFontSize();
+  document.getElementById('font-size-value').textContent = size;
+  document.getElementById('font-size-dec').disabled = size <= FONT_SIZE_MIN;
+  document.getElementById('font-size-inc').disabled = size >= FONT_SIZE_MAX;
+}
+
+function setFontSize(size) {
+  localStorage.setItem(FONT_SIZE_KEY, String(Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, size))));
+  updateFontSizeDisplay();
+
+  // Reload any terminal iframe already pointed at a real session (not
+  // about:blank) so the new size takes effect immediately - ttyd's backing
+  // tmux session is persistent, so this just reconnects the websocket and
+  // redraws, no session/scrollback loss.
+  const claudeFrame = document.getElementById('claude-frame');
+  if (currentProject && claudeFrame.src) {
+    claudeFrame.src = terminalUrl(`/term/${encodeURIComponent(currentProject)}/`);
+  }
+  const shellFrame = document.getElementById('shell-frame');
+  if (shellFrame.dataset.loadedFor) {
+    shellFrame.src = terminalUrl(`/shell/${encodeURIComponent(shellFrame.dataset.loadedFor)}/`);
+  }
+}
+
+document.getElementById('font-size-dec').addEventListener('click', () => setFontSize(getFontSize() - FONT_SIZE_STEP));
+document.getElementById('font-size-inc').addEventListener('click', () => setFontSize(getFontSize() + FONT_SIZE_STEP));
+updateFontSizeDisplay();
 
 let currentTab = 'claude';
 
@@ -140,7 +243,7 @@ async function selectProject(name) {
 
   // Kick off (or reattach to) the tmux session, then point the iframe at it.
   await fetch(`/api/session/${encodeURIComponent(name)}/start`, { method: 'POST' });
-  document.getElementById('claude-frame').src = `/term/${encodeURIComponent(name)}/`;
+  document.getElementById('claude-frame').src = terminalUrl(`/term/${encodeURIComponent(name)}/`);
 
   // The shell session is started lazily (only once the Terminal tab is
   // actually opened) rather than eagerly like Claude Code's, so switching
@@ -158,7 +261,7 @@ async function ensureShellStarted() {
   const frame = document.getElementById('shell-frame');
   if (!currentProject || frame.dataset.loadedFor === currentProject) return;
   await fetch(`/api/session/${encodeURIComponent(currentProject)}/start?kind=shell`, { method: 'POST' });
-  frame.src = `/shell/${encodeURIComponent(currentProject)}/`;
+  frame.src = terminalUrl(`/shell/${encodeURIComponent(currentProject)}/`);
   frame.dataset.loadedFor = currentProject;
 }
 
