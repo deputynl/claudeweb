@@ -15,8 +15,3 @@ services:
       - ~/.claude:/root/.claude
       - ~/.claude.json:/root/.claude.json
     restart: unless-stopped
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.claudeweb.entrypoints=web
-      - traefik.http.routers.claudeweb.rule=Host(`claudeweb.deputy.nl`)
-      - traefik.http.services.claudeweb.loadbalancer.server.port=8080
