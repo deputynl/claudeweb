@@ -94,16 +94,10 @@ async function loadProjects() {
 }
 
 // ttyd serves its own document into these iframes, but same-origin (proxied
-// through /term/ and /shell/) means we can reach into it and inject our own
-// styling: scrollbars to match the rest of the app, and a @font-face for the
-// terminal font. The latter matters because ttyd is started with
-// fontFamily="'DejaVuSansM Nerd Font Mono', monospace" (see ttydManager.js)
-// but that name is only meaningful if the same font is actually loaded in
-// this document - without it, each client's browser would fall back to
-// whatever "DejaVuSansM Nerd Font Mono" (or its next fallback) resolves to
-// locally, which is exactly the kind of per-client font substitution that
-// causes glyph/cell-width mismatches.
-function styleTerminalFrame(iframe) {
+// through /term/ and /shell/) means we can reach into it and inject our
+// scrollbar styling so the terminal matches the rest of the app instead of
+// showing the browser's default scrollbar.
+function styleTerminalScrollbar(iframe) {
   iframe.addEventListener('load', () => {
     let doc;
     try {
@@ -114,31 +108,6 @@ function styleTerminalFrame(iframe) {
     if (!doc || !doc.head) return;
     const style = doc.createElement('style');
     style.textContent = `
-      @font-face {
-        font-family: 'DejaVuSansM Nerd Font Mono';
-        src: url('/vendor/dejavu-sans-mono-nerd-font/DejaVuSansMNerdFontMono-Regular.ttf') format('truetype');
-        font-weight: normal;
-        font-style: normal;
-      }
-      @font-face {
-        font-family: 'DejaVuSansM Nerd Font Mono';
-        src: url('/vendor/dejavu-sans-mono-nerd-font/DejaVuSansMNerdFontMono-Bold.ttf') format('truetype');
-        font-weight: bold;
-        font-style: normal;
-      }
-      @font-face {
-        font-family: 'DejaVuSansM Nerd Font Mono';
-        src: url('/vendor/dejavu-sans-mono-nerd-font/DejaVuSansMNerdFontMono-Oblique.ttf') format('truetype');
-        font-weight: normal;
-        font-style: italic;
-      }
-      @font-face {
-        font-family: 'DejaVuSansM Nerd Font Mono';
-        src: url('/vendor/dejavu-sans-mono-nerd-font/DejaVuSansMNerdFontMono-BoldOblique.ttf') format('truetype');
-        font-weight: bold;
-        font-style: italic;
-      }
-
       * { scrollbar-width: thin; scrollbar-color: #3e3d38 transparent; }
       *::-webkit-scrollbar { width: 10px; height: 10px; }
       *::-webkit-scrollbar-track { background: transparent; }
@@ -152,26 +121,10 @@ function styleTerminalFrame(iframe) {
       *::-webkit-scrollbar-corner { background: transparent; }
     `;
     doc.head.appendChild(style);
-
-    // ttyd's canvas renderer measures glyph widths against whatever font is
-    // actually loaded at the moment it initializes, which can race ahead of
-    // this @font-face's own network fetch. Once the real font finishes
-    // loading, force a resize so ttyd's fit addon (bound to window resize)
-    // remeasures and repaints with correct metrics instead of leaving
-    // stale, fallback-font-derived column widths in place.
-    if (doc.fonts && doc.fonts.load) {
-      doc.fonts.load("16px 'DejaVuSansM Nerd Font Mono'").catch(() => {}).then(() => {
-        try {
-          iframe.contentWindow.dispatchEvent(new Event('resize'));
-        } catch (e) {
-          // iframe navigated away already - nothing to fix up
-        }
-      });
-    }
   });
 }
-styleTerminalFrame(document.getElementById('claude-frame'));
-styleTerminalFrame(document.getElementById('shell-frame'));
+styleTerminalScrollbar(document.getElementById('claude-frame'));
+styleTerminalScrollbar(document.getElementById('shell-frame'));
 
 let currentTab = 'claude';
 

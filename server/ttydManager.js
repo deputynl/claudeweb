@@ -67,34 +67,6 @@ async function getOrStartSession(project, kind = 'claude') {
     '-W',
     '-t', 'disableLeaveAlert=true',
     '-t', 'fontSize=16',
-    // Claude Code's TUI leans on box-drawing borders, a Braille spinner, and
-    // (as of newer releases) Nerd Font/PUA icon codepoints for small status
-    // glyphs; most fallback monospace fonts are missing at least one of
-    // these, and the browser silently substituting a different font for just
-    // that glyph is what causes tofu boxes and - because the substitute
-    // often has a different advance width - column desync/clipping for the
-    // rest of the line. "DejaVuSansM Nerd Font Mono" is DejaVu Sans Mono
-    // patched with the Nerd Font icon set (same metrics, same box-drawing
-    // coverage, plus the missing icon range), so nothing falls back - it's
-    // vendored locally and loaded into the iframe in app.js. Quoting only
-    // the multi-word name (not the whole value, comma included) matters:
-    // `'DejaVuSansM Nerd Font Mono', monospace` is a real font list,
-    // `'DejaVuSansM Nerd Font Mono, monospace'` is one bogus family name
-    // that resolves to nothing.
-    '-t', "fontFamily='DejaVuSansM Nerd Font Mono', monospace",
-    // xterm's default unicode width table treats a handful of codepoints
-    // Claude Code emits (spinner, prompt-box corners) as ambiguous-width,
-    // which desyncs column math from what the underlying terminal (and
-    // tmux) computed - the visible symptom being shifted/misplaced
-    // characters right after those glyphs, worst at the start of the next
-    // line. The Unicode11Addon's table fixes that. This is ttyd's own
-    // default already, set explicitly so behavior doesn't drift if that
-    // default ever changes upstream.
-    '-t', 'unicodeVersion=11',
-    // WebGL (ttyd's default renderer) and canvas rasterize box-drawing/
-    // custom glyphs slightly differently; canvas is the safer choice when
-    // border-corner artifacts are the specific complaint.
-    '-t', 'rendererType=canvas',
     ...tmuxArgs,
   ], { stdio: 'inherit' });
 
