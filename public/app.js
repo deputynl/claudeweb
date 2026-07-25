@@ -158,20 +158,66 @@ function styleTerminalFrame(iframe) {
 
     // xterm.js (inside ttyd's iframe) measures its own cell/column metrics
     // against whatever font is actually loaded at that moment, which can
-    // race ahead of the @font-face fetch above. Explicitly request the
-    // font and wait for the document's whole font-load queue to settle
-    // (not a fixed delay) before forcing a resize, so xterm's fit addon
-    // remeasures and repaints using the vendored font's real metrics
-    // instead of stale ones from a fallback font.
+    // race ahead of the @font-face fetch above - especially over a real
+    // (non-Docker-local) network, where the woff2 fetch can take long
+    // enough that tmux's very first attach-redraw (which paints whatever
+    // is already in the pane, bold "Welcome back" banner included) lands
+    // before the font arrives. That first paint bakes in fallback-font
+    // cell metrics into xterm's renderer that persist even after the
+    // real font loads - a later same-size resize doesn't fix it, because
+    // xterm only remeasures glyph width when the *container* actually
+    // changes size or when a font-related terminal option changes; it has
+    // no way to know a @font-face it isn't watching just became available.
+    // `document.fonts.load(...)` only loads the one weight/style you ask
+    // for, so all four (regular/bold/italic/bold-italic) must be listed
+    // explicitly or `document.fonts.ready` can resolve without ever having
+    // touched the bold/italic faces - they'd then still load lazily,
+    // whenever xterm first tries to paint bold/italic text, with nothing
+    // to trigger a remeasure afterwards.
     if (doc.fonts) {
-      doc.fonts.load("16px 'DejaVu Sans Mono'").catch(() => {});
-      doc.fonts.ready.then(() => {
-        try {
-          iframe.contentWindow.dispatchEvent(new Event('resize'));
-        } catch (e) {
-          // iframe navigated away already - nothing to fix up
-        }
-      });
+      const variants = [
+        "16px 'DejaVu Sans Mono'",
+        "bold 16px 'DejaVu Sans Mono'",
+        "italic 16px 'DejaVu Sans Mono'",
+        "italic bold 16px 'DejaVu Sans Mono'",
+      ];
+      Promise.all(variants.map((v) => doc.fonts.load(v).catch(() => {})))
+        .then(() => doc.fonts.ready)
+        .then(() => {
+          try {
+            // ttyd exposes its live xterm.js Terminal instance as
+            // `window.term` inside its own iframe document (see its
+            // bundled Xterm class: `window.term = t`), contrary to what
+            // used to be assumed here. Verified (via a raw CDP network
+            // throttle + `document.fonts.check()` poll) that once the
+            // real font finishes loading late, xterm's cached cell
+            // width/height do NOT get remeasured on their own - confirmed
+            // by reading `term._core._renderService.dimensions.css.cell`
+            // before/after. Re-assigning `fontFamily` to its *own current
+            // value* does nothing either: xterm's OptionsService no-ops
+            // same-value writes, so the change handler that would trigger
+            // CharSizeService never fires. Toggling to a throwaway value
+            // first forces a real change, which does trigger it.
+            const term = iframe.contentWindow.term;
+            if (term && term.options) {
+              const family = term.options.fontFamily;
+              term.options.fontFamily = 'monospace';
+              term.options.fontFamily = family;
+              if (term._core && term._core._charSizeService) {
+                term._core._charSizeService.measure();
+              }
+            }
+            // Let ttyd's own window-resize listener (which it does
+            // register, despite the name suggesting otherwise) turn the
+            // now-correct cell size into new rows/cols and propagate that
+            // to the server - reaching in to call fitAddon.fit() directly
+            // bypasses that propagation and desyncs the pty's idea of the
+            // terminal size from what's on screen.
+            iframe.contentWindow.dispatchEvent(new Event('resize'));
+          } catch (e) {
+            // iframe navigated away already - nothing to fix up
+          }
+        });
     }
   });
 }
