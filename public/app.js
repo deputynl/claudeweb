@@ -28,6 +28,14 @@ const highlightStyle = HighlightStyle.define([
 
 // Reconfigurable per open file - see openFile().
 const languageCompartment = new Compartment();
+// Reconfigured (not rebuilt) on toggle - see setWordWrap() - so wrapping can
+// be flipped without losing undo history.
+const wrapCompartment = new Compartment();
+const WORD_WRAP_KEY = 'claudeweb.wordWrap';
+
+function getWordWrap() {
+  return localStorage.getItem(WORD_WRAP_KEY) === '1';
+}
 
 // Building a fresh EditorState per file (rather than dispatching a change
 // transaction into the existing one) resets undo history for free, matching
@@ -44,6 +52,7 @@ function createEditorState(doc, relPath) {
       syntaxHighlighting(highlightStyle),
       keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
       languageCompartment.of(relPath ? languageForPath(relPath) : []),
+      wrapCompartment.of(getWordWrap() ? EditorView.lineWrapping : []),
     ],
   });
 }
@@ -109,6 +118,7 @@ function setViewMode(mode) {
   document.querySelectorAll('#md-toggle .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
   document.getElementById('code-editor').hidden = mode !== 'code';
   document.getElementById('md-preview').hidden = mode !== 'preview';
+  document.getElementById('wrap-toggle-btn').hidden = mode !== 'code';
   if (mode === 'preview' && currentRenderer) {
     document.getElementById('md-preview').innerHTML = currentRenderer(codeMirror.state.doc.toString());
   } else {
@@ -119,6 +129,24 @@ function setViewMode(mode) {
 document.querySelectorAll('#md-toggle .seg-btn').forEach((btn) => {
   btn.addEventListener('click', () => setViewMode(btn.dataset.mode));
 });
+
+// --- Word wrap ---
+
+function updateWrapButton() {
+  const enabled = getWordWrap();
+  const btn = document.getElementById('wrap-toggle-btn');
+  btn.classList.toggle('active', enabled);
+  btn.setAttribute('aria-pressed', String(enabled));
+}
+
+function setWordWrap(enabled) {
+  localStorage.setItem(WORD_WRAP_KEY, enabled ? '1' : '0');
+  codeMirror.dispatch({ effects: wrapCompartment.reconfigure(enabled ? EditorView.lineWrapping : []) });
+  updateWrapButton();
+}
+
+document.getElementById('wrap-toggle-btn').addEventListener('click', () => setWordWrap(!getWordWrap()));
+updateWrapButton();
 
 async function loadProjects() {
   const res = await fetch('/api/projects');

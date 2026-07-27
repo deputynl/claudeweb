@@ -134,6 +134,19 @@ body {
 .seg-btn:hover { color: var(--text); }
 .seg-btn.active { background: var(--bg-panel); color: var(--text); }
 
+#wrap-toggle-btn {
+  flex-shrink: 0;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+#wrap-toggle-btn:hover { color: var(--text); }
+#wrap-toggle-btn.active { background: var(--accent-dim); border-color: var(--accent); color: var(--text); }
+
 #download-btn, #save-btn { flex-shrink: 0; padding: 6px 16px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; }
 #download-btn { background: var(--bg-panel); color: var(--text); }
 #download-btn:hover:not(:disabled) { background: var(--border); }
