@@ -66,7 +66,7 @@ async function getOrStartSession(project, kind = 'claude') {
     '-p', String(port),
     '-W',
     '-t', 'disableLeaveAlert=true',
-    '-t', 'fontSize=16',
+    '-t', 'fontSize=12',
     // Vendored so terminal text renders identically regardless of what's
     // installed client-side, matched by the @font-face injected into the
     // iframe in app.js - not what fixes box-drawing corners (that's the

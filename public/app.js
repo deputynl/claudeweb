@@ -303,50 +303,11 @@ styleTerminalFrame(document.getElementById('shell-frame'));
 // ttyd's bundled frontend. That's the officially supported way to set it;
 // there's no other reach-in point since ttyd's Terminal instance isn't
 // exposed on the iframe's window.
-const FONT_SIZE_KEY = 'claudeweb.terminalFontSize';
-const FONT_SIZE_MIN = 10;
-const FONT_SIZE_MAX = 28;
-const FONT_SIZE_DEFAULT = 16;
-const FONT_SIZE_STEP = 2;
-
-function getFontSize() {
-  const stored = parseInt(localStorage.getItem(FONT_SIZE_KEY), 10);
-  if (Number.isNaN(stored)) return FONT_SIZE_DEFAULT;
-  return Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, stored));
-}
+const TERMINAL_FONT_SIZE = 12;
 
 function terminalUrl(basePath) {
-  return `${basePath}?fontSize=${getFontSize()}`;
+  return `${basePath}?fontSize=${TERMINAL_FONT_SIZE}`;
 }
-
-function updateFontSizeDisplay() {
-  const size = getFontSize();
-  document.getElementById('font-size-value').textContent = size;
-  document.getElementById('font-size-dec').disabled = size <= FONT_SIZE_MIN;
-  document.getElementById('font-size-inc').disabled = size >= FONT_SIZE_MAX;
-}
-
-function setFontSize(size) {
-  localStorage.setItem(FONT_SIZE_KEY, String(Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, size))));
-  updateFontSizeDisplay();
-
-  // Reload any terminal iframe already pointed at a real session (not
-  // about:blank) so the new size takes effect immediately - ttyd's backing
-  // tmux session is persistent, so this just reconnects the websocket and
-  // redraws, no session/scrollback loss.
-  const claudeFrame = document.getElementById('claude-frame');
-  if (currentProject && claudeFrame.src) {
-    claudeFrame.src = terminalUrl(`/term/${encodeURIComponent(currentProject)}/`);
-  }
-  const shellFrame = document.getElementById('shell-frame');
-  if (shellFrame.dataset.loadedFor) {
-    shellFrame.src = terminalUrl(`/shell/${encodeURIComponent(shellFrame.dataset.loadedFor)}/`);
-  }
-}
-
-document.getElementById('font-size-dec').addEventListener('click', () => setFontSize(getFontSize() - FONT_SIZE_STEP));
-document.getElementById('font-size-inc').addEventListener('click', () => setFontSize(getFontSize() + FONT_SIZE_STEP));
-updateFontSizeDisplay();
 
 // --- Sidebar resize ---
 const SIDEBAR_WIDTH_KEY = 'claudeweb.sidebarWidth';
