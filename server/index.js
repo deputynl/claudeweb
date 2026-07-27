@@ -3,7 +3,7 @@ const http = require('http');
 const httpProxy = require('http-proxy');
 const path = require('path');
 
-const { getOrStartSession, listProjects, safeProjectDir } = require('./ttydManager');
+const { getOrStartSession, listProjects, safeProjectDir, stopProjectSessions } = require('./ttydManager');
 const fileApi = require('./fileApi');
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
@@ -35,6 +35,15 @@ app.post('/api/session/:project/start', async (req, res) => {
     const kind = req.query.kind === 'shell' ? 'shell' : 'claude';
     const port = await getOrStartSession(req.params.project, kind);
     res.json({ ok: true, port });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/session/:project/stop', (req, res) => {
+  try {
+    stopProjectSessions(req.params.project);
+    res.json({ ok: true });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

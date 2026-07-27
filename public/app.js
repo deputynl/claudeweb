@@ -411,9 +411,23 @@ async function selectProject(name) {
     li.classList.toggle('active', li.dataset.name === name);
   });
 
-  // Kick off (or reattach to) the tmux session, then point the iframe at it.
-  await fetch(`/api/session/${encodeURIComponent(name)}/start`, { method: 'POST' });
-  document.getElementById('claude-frame').src = terminalUrl(`/term/${encodeURIComponent(name)}/`);
+  // Reset the file editor pane so a project switch can never leave the
+  // previous project's file content on screen - loadFileTree() below only
+  // rebuilds the tree, it doesn't touch whatever was already open in the
+  // editor.
+  document.getElementById('file-path').textContent = 'Select a file to view or edit';
+  document.getElementById('save-btn').disabled = true;
+  document.getElementById('download-btn').disabled = true;
+  document.getElementById('save-status').textContent = '';
+  document.getElementById('md-toggle').hidden = true;
+  currentRenderer = null;
+  codeMirror.setState(createEditorState(''));
+  setViewMode('code');
+
+  // Force a reconnect even if this project's Claude Code session was already
+  // marked loaded (e.g. re-selecting the currently active project).
+  delete document.getElementById('claude-frame').dataset.loadedFor;
+  await ensureClaudeStarted();
 
   // The shell session is started lazily (only once the Terminal tab is
   // actually opened) rather than eagerly like Claude Code's, so switching
@@ -426,6 +440,14 @@ async function selectProject(name) {
 
   await loadFileTree();
   loadProjects(); // refresh running-dot state
+}
+
+async function ensureClaudeStarted() {
+  const frame = document.getElementById('claude-frame');
+  if (!currentProject || frame.dataset.loadedFor === currentProject) return;
+  await fetch(`/api/session/${encodeURIComponent(currentProject)}/start`, { method: 'POST' });
+  frame.src = terminalUrl(`/term/${encodeURIComponent(currentProject)}/`);
+  frame.dataset.loadedFor = currentProject;
 }
 
 async function ensureShellStarted() {
@@ -443,6 +465,7 @@ function switchTab(tab) {
   document.getElementById('tab-shell').hidden = tab !== 'shell';
   document.getElementById('tab-files').hidden = tab !== 'files';
   if (tab === 'files') codeMirror.requestMeasure();
+  if (tab === 'claude') ensureClaudeStarted();
   if (tab === 'shell') ensureShellStarted();
 
   if (currentProject) {
@@ -453,6 +476,28 @@ function switchTab(tab) {
 
 document.querySelectorAll('.tab-btn').forEach((btn) => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+// Ends both tmux sessions (Claude Code + Terminal) for the current project.
+// Sessions are left stopped rather than immediately restarted - the frames
+// go blank and ensureClaudeStarted()/ensureShellStarted() lazily reconnect
+// the next time their tab is (re-)selected, same as a normal cold start.
+document.getElementById('close-sessions-btn').addEventListener('click', async () => {
+  if (!currentProject) return;
+  const ok = confirm(`Close all tmux sessions for "${currentProject}"? This ends the running Claude Code process and terminal for this project.`);
+  if (!ok) return;
+
+  await fetch(`/api/session/${encodeURIComponent(currentProject)}/stop`, { method: 'POST' });
+
+  const claudeFrame = document.getElementById('claude-frame');
+  claudeFrame.src = 'about:blank';
+  delete claudeFrame.dataset.loadedFor;
+
+  const shellFrame = document.getElementById('shell-frame');
+  shellFrame.src = 'about:blank';
+  delete shellFrame.dataset.loadedFor;
+
+  loadProjects();
 });
 
 // --- Files ---
@@ -490,8 +535,12 @@ function renderTree(nodes) {
 }
 
 async function openFile(relPath) {
-  const res = await fetch(`/api/file/${encodeURIComponent(currentProject)}?path=${encodeURIComponent(relPath)}`);
-  if (!res.ok) return;
+  const project = currentProject;
+  const res = await fetch(`/api/file/${encodeURIComponent(project)}?path=${encodeURIComponent(relPath)}`);
+  // Bail if the user switched projects while this request was in flight -
+  // otherwise a slow fetch for a previous project can land after the switch
+  // and render that project's file content into the new project's editor.
+  if (!res.ok || project !== currentProject) return;
   const data = await res.json();
   currentFile = relPath;
   document.getElementById('file-path').textContent = relPath;

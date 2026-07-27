@@ -111,6 +111,19 @@ body {
 #font-size-controls button:disabled { color: var(--text-faint); cursor: default; background: none; }
 #font-size-value { color: var(--text-faint); font-size: 12px; width: 2ch; text-align: center; }
 #current-project { margin-left: 12px; color: var(--text-faint); font-size: 12px; }
+#close-sessions-btn {
+  margin-left: 4px;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+}
+#close-sessions-btn:hover { background: var(--accent-dim); color: var(--accent); }
 
 .tab-panel { flex: 1; min-height: 0; display: flex; }
 .tab-panel[hidden] { display: none; }

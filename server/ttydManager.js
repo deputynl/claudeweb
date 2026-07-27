@@ -1,4 +1,4 @@
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
@@ -103,6 +103,28 @@ async function getOrStartSession(project, kind = 'claude') {
   return port;
 }
 
+// Ends both tmux sessions ("claude" and "shell") for a project. tmux
+// sessions are created with `new-session -A` so they normally outlive their
+// ttyd process (that's what makes reconnects survive dropped connections) -
+// killing just the ttyd proc would leave the tmux session (and whatever's
+// running inside it, e.g. Claude Code) alive in the background. So this
+// kills the tmux session directly via `tmux kill-session`, then also kills
+// the tracked ttyd proc so the next visit spawns a fresh pair instead of
+// proxying to a stale one.
+function stopProjectSessions(project) {
+  for (const kind of ['claude', 'shell']) {
+    const key = `${project}:${kind}`;
+    const sessionName = kind === 'shell' ? `${project}__shell` : project;
+    spawnSync('tmux', ['-f', '/etc/tmux.conf', 'kill-session', '-t', sessionName]);
+
+    const existing = sessions.get(key);
+    if (existing) {
+      existing.proc.kill();
+      sessions.delete(key);
+    }
+  }
+}
+
 function listProjects() {
   return fs.readdirSync(WORKSPACE_DIR, { withFileTypes: true })
     .filter((d) => d.isDirectory() && !d.name.startsWith('.'))
@@ -113,4 +135,4 @@ function listProjects() {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-module.exports = { getOrStartSession, listProjects, safeProjectDir };
+module.exports = { getOrStartSession, listProjects, safeProjectDir, stopProjectSessions };
