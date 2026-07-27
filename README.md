@@ -24,11 +24,14 @@ subfolder of the mounted workspace.
   tab) safe — only the terminal view drops, the `claude` process and its
   scrollback keep running in tmux until you come back.
 - **Files tab**: a simple read/write API scoped to each project folder
-  (path-traversal guarded), with a tree view and an editor (CodeMirror,
-  vendored locally under `public/vendor/` — no CDN dependency) that
-  syntax-highlights based on file extension. Markdown files get an extra
-  Code/Preview toggle (rendered client-side with `marked.js`, also vendored
-  locally). Save and Download buttons sit in a toolbar above the editor.
+  (path-traversal guarded), with a tree view and an editor (CodeMirror 6,
+  vendored locally as a single pre-bundled ES module under
+  `public/vendor/codemirror6/` — no CDN dependency, see that file's header
+  comment for how to rebuild it) that syntax-highlights based on file
+  extension and has full-document find/replace (`Ctrl-F`/`Cmd-F`). Markdown
+  files get an extra Code/Preview toggle (rendered client-side with
+  `marked.js`, also vendored locally). Save and Download buttons sit in a
+  toolbar above the editor.
 
 Only one port needs to leave the container — everything else (the spawned
 `ttyd` processes) stays internal and is proxied through the hub.
@@ -72,9 +75,14 @@ Only one port needs to leave the container — everything else (the spawned
 ## Known limitations / things to extend later
 
 - Syntax highlighting covers common extensions (JS/TS, JSON, CSS, HTML,
-  Markdown, Python, shell, YAML, SQL, C/C++/Java/C#) via a fixed
-  extension-to-mode map in `public/app.js` — anything else falls back to
-  plain text.
+  Markdown, Python, shell, YAML, SQL, C/C++/Java/C#, Dockerfile) via a fixed
+  extension-to-language map in `public/app.js` — anything else falls back to
+  plain text. Shell, C#, and Dockerfile have no official CodeMirror 6
+  language package, so they use `@codemirror/legacy-modes`' upstream ports
+  of the old CodeMirror 5 modes instead of a real parser; that's a straight
+  port, not a hand-rolled one, but it's worth re-checking their highlighting
+  after a CodeMirror upgrade since they won't get the same fixes real
+  `@codemirror/lang-*` packages do.
 - No idle-timeout/cleanup for `ttyd` child processes yet — they stay running
   until the container restarts. Fine for a handful of projects; worth adding
   a reaper if you end up with many.

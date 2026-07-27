@@ -1,30 +1,74 @@
+import {
+  EditorState, EditorView, Compartment, keymap, lineNumbers, drawSelection,
+  defaultKeymap, history, historyKeymap, bracketMatching, syntaxHighlighting,
+  HighlightStyle, search, searchKeymap, tags, languages,
+} from './vendor/codemirror6/codemirror6.bundle.js';
+
 let currentProject = null;
 let currentFile = null;
 let viewMode = 'code';
 
-const codeMirror = CodeMirror(document.getElementById('code-editor'), {
-  value: '',
-  lineNumbers: true,
-  theme: 'hub',
-  mode: null,
-  readOnly: false,
+// Token colors, matched to the rest of the UI. Chrome (background, gutters,
+// cursor, search panel, ...) is themed with plain CSS in styles.css against
+// CM6's stable default class names - only per-token syntax colors need the
+// @lezer/highlight `tags` API, which is JS-only.
+const highlightStyle = HighlightStyle.define([
+  { tag: tags.comment, color: 'var(--text-faint)', fontStyle: 'italic' },
+  { tag: tags.keyword, color: 'var(--syn-keyword)' },
+  { tag: [tags.atom, tags.number, tags.bool], color: 'var(--syn-number)' },
+  { tag: [tags.string, tags.special(tags.string)], color: 'var(--syn-string)' },
+  { tag: [tags.propertyName, tags.attributeName], color: 'var(--syn-property)' },
+  { tag: [tags.typeName, tags.definition(tags.variableName)], color: 'var(--text)' },
+  { tag: tags.tagName, color: 'var(--syn-keyword)' },
+  { tag: tags.meta, color: 'var(--text-dim)' },
+  { tag: tags.operator, color: 'var(--text-dim)' },
+  { tag: tags.heading, color: 'var(--accent)', fontWeight: '600' },
+  { tag: [tags.link, tags.url], color: 'var(--syn-property)' },
+]);
+
+// Reconfigurable per open file - see openFile().
+const languageCompartment = new Compartment();
+
+// Building a fresh EditorState per file (rather than dispatching a change
+// transaction into the existing one) resets undo history for free, matching
+// CM5's explicit clearHistory() call on file open.
+function createEditorState(doc, relPath) {
+  return EditorState.create({
+    doc,
+    extensions: [
+      lineNumbers(),
+      drawSelection(),
+      bracketMatching(),
+      history(),
+      search(),
+      syntaxHighlighting(highlightStyle),
+      keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+      languageCompartment.of(relPath ? languageForPath(relPath) : []),
+    ],
+  });
+}
+
+const codeMirror = new EditorView({
+  parent: document.getElementById('code-editor'),
+  state: createEditorState(''),
 });
 
 const MODE_BY_EXT = {
-  js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
-  ts: { name: 'javascript', typescript: true }, tsx: { name: 'javascript', typescript: true },
-  json: { name: 'javascript', json: true },
-  css: 'css', scss: 'css', less: 'css',
-  html: 'htmlmixed', htm: 'htmlmixed',
-  xml: 'xml', svg: 'xml',
-  md: 'markdown', markdown: 'markdown',
-  py: 'python',
-  sh: 'shell', bash: 'shell', zsh: 'shell',
-  yml: 'yaml', yaml: 'yaml',
-  sql: 'sql',
-  c: 'text/x-csrc', h: 'text/x-csrc',
-  cpp: 'text/x-c++src', hpp: 'text/x-c++src', cc: 'text/x-c++src',
-  java: 'text/x-java', cs: 'text/x-csharp',
+  js: languages.javascript, jsx: languages.jsx, mjs: languages.javascript, cjs: languages.javascript,
+  ts: languages.typescript, tsx: languages.tsx,
+  json: languages.json,
+  css: languages.css, scss: languages.css, less: languages.css,
+  html: languages.html, htm: languages.html,
+  xml: languages.xml, svg: languages.xml,
+  md: languages.markdown, markdown: languages.markdown,
+  py: languages.python,
+  sh: languages.shell, bash: languages.shell, zsh: languages.shell,
+  yml: languages.yaml, yaml: languages.yaml,
+  sql: languages.sql,
+  c: languages.cpp, h: languages.cpp,
+  cpp: languages.cpp, hpp: languages.cpp, cc: languages.cpp,
+  java: languages.java, cs: languages.csharp,
+  dockerfile: languages.dockerfile,
 };
 
 function escapeHtmlAttr(s) {
@@ -47,11 +91,12 @@ const PREVIEW_RENDERERS = [
 
 let currentRenderer = null;
 
-function modeForPath(relPath) {
+function languageForPath(relPath) {
   const base = relPath.split('/').pop().toLowerCase();
-  if (base === 'dockerfile' || base.startsWith('dockerfile.')) return 'dockerfile';
+  if (base === 'dockerfile' || base.startsWith('dockerfile.')) return languages.dockerfile();
   const ext = base.split('.').pop();
-  return MODE_BY_EXT[ext] || null;
+  const factory = MODE_BY_EXT[ext];
+  return factory ? factory() : [];
 }
 
 function rendererForPath(relPath) {
@@ -65,9 +110,9 @@ function setViewMode(mode) {
   document.getElementById('code-editor').hidden = mode !== 'code';
   document.getElementById('md-preview').hidden = mode !== 'preview';
   if (mode === 'preview' && currentRenderer) {
-    document.getElementById('md-preview').innerHTML = currentRenderer(codeMirror.getValue());
+    document.getElementById('md-preview').innerHTML = currentRenderer(codeMirror.state.doc.toString());
   } else {
-    codeMirror.refresh();
+    codeMirror.requestMeasure();
   }
 }
 
@@ -369,7 +414,7 @@ function switchTab(tab) {
   document.getElementById('tab-claude').hidden = tab !== 'claude';
   document.getElementById('tab-shell').hidden = tab !== 'shell';
   document.getElementById('tab-files').hidden = tab !== 'files';
-  if (tab === 'files') codeMirror.refresh();
+  if (tab === 'files') codeMirror.requestMeasure();
   if (tab === 'shell') ensureShellStarted();
 
   if (currentProject) {
@@ -429,9 +474,7 @@ async function openFile(relPath) {
     if (li.dataset.path) li.classList.toggle('selected', li.dataset.path === relPath);
   });
 
-  codeMirror.setValue(data.content);
-  codeMirror.clearHistory();
-  codeMirror.setOption('mode', modeForPath(relPath));
+  codeMirror.setState(createEditorState(data.content, relPath));
 
   currentRenderer = rendererForPath(relPath);
   document.getElementById('md-toggle').hidden = !currentRenderer;
@@ -440,7 +483,7 @@ async function openFile(relPath) {
 
 document.getElementById('save-btn').addEventListener('click', async () => {
   if (!currentFile) return;
-  const content = codeMirror.getValue();
+  const content = codeMirror.state.doc.toString();
   const res = await fetch(`/api/file/${encodeURIComponent(currentProject)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -451,7 +494,7 @@ document.getElementById('save-btn').addEventListener('click', async () => {
 
 document.getElementById('download-btn').addEventListener('click', () => {
   if (!currentFile) return;
-  const blob = new Blob([codeMirror.getValue()], { type: 'text/plain' });
+  const blob = new Blob([codeMirror.state.doc.toString()], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

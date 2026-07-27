@@ -60,7 +60,7 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
 }
-#sidebar h1 { font-size: 14px; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 12px; }
+#sidebar h1 { font-size: 14px; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; margin: -2px 0 12px; }
 #project-list { list-style: none; padding: 0; margin: 0; }
 #project-list li {
   padding: 4px 10px;
@@ -145,26 +145,35 @@ body {
 
 #editor-host { flex: 1; min-height: 0; position: relative; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 #code-editor, #md-preview { position: absolute; inset: 0; }
-#code-editor .CodeMirror { height: 100%; font-family: "SF Mono", Consolas, monospace; font-size: 13px; }
+#code-editor .cm-editor { height: 100%; font-family: "SF Mono", Consolas, monospace; font-size: 13px; }
 
-/* CodeMirror theme, matched to the rest of the UI */
-.CodeMirror.cm-s-hub { background: var(--bg-inset); color: var(--text); }
-.cm-s-hub .CodeMirror-gutters { background: var(--bg-inset); border-right: 1px solid var(--border); }
-.cm-s-hub .CodeMirror-linenumber { color: var(--text-faint); }
-.cm-s-hub .CodeMirror-cursor { border-left: 1px solid var(--text); }
-.cm-s-hub .CodeMirror-selected { background: var(--accent-dim); }
-.cm-s-hub .CodeMirror-matchingbracket { color: var(--accent) !important; }
-.cm-s-hub .cm-comment { color: var(--text-faint); font-style: italic; }
-.cm-s-hub .cm-keyword { color: var(--syn-keyword); }
-.cm-s-hub .cm-atom, .cm-s-hub .cm-number { color: var(--syn-number); }
-.cm-s-hub .cm-string, .cm-s-hub .cm-string-2 { color: var(--syn-string); }
-.cm-s-hub .cm-property, .cm-s-hub .cm-attribute { color: var(--syn-property); }
-.cm-s-hub .cm-variable-2, .cm-s-hub .cm-def { color: var(--text); }
-.cm-s-hub .cm-tag { color: var(--syn-keyword); }
-.cm-s-hub .cm-meta, .cm-s-hub .cm-qualifier { color: var(--text-dim); }
-.cm-s-hub .cm-operator { color: var(--text-dim); }
-.cm-s-hub .cm-header { color: var(--accent); font-weight: 600; }
-.cm-s-hub .cm-link, .cm-s-hub .cm-url { color: var(--syn-property); }
+/* CodeMirror 6 chrome, matched to the rest of the UI. Per-token syntax
+   colors are set via a HighlightStyle in app.js instead (that mapping needs
+   the @lezer/highlight `tags` API, which only exists in JS). */
+#code-editor .cm-editor { background: var(--bg-inset); color: var(--text); }
+#code-editor .cm-editor.cm-focused { outline: none; }
+#code-editor .cm-gutters { background: var(--bg-inset); color: var(--text-faint); border-right: 1px solid var(--border); }
+#code-editor .cm-activeLineGutter { background: transparent; }
+#code-editor .cm-cursor { border-left: 1px solid var(--text); }
+#code-editor .cm-selectionBackground, #code-editor .cm-content ::selection { background: var(--accent-dim) !important; }
+#code-editor .cm-matchingBracket, #code-editor .cm-nonmatchingBracket { color: var(--accent); background: transparent; font-weight: 600; }
+
+/* CM6's built-in search/replace panel (@codemirror/search) */
+#code-editor .cm-panels { background: var(--bg-panel); color: var(--text); }
+#code-editor .cm-panel.cm-search { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-top: 1px solid var(--border); font-size: 12px; }
+#code-editor .cm-panel.cm-search input[type="text"] {
+  background: var(--bg-inset); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 3px 6px; font-size: 12px;
+}
+#code-editor .cm-panel.cm-search button {
+  background: var(--bg-panel); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 3px 8px; font-size: 12px; cursor: pointer;
+}
+#code-editor .cm-panel.cm-search button:hover { background: var(--border); }
+#code-editor .cm-panel.cm-search label { color: var(--text-dim); display: flex; align-items: center; gap: 3px; }
+#code-editor .cm-searchMatch { background: var(--accent-dim); }
+#code-editor .cm-searchMatch.cm-searchMatch-selected { background: var(--accent); color: #1a1a18; }
+#code-editor .cm-selectionMatch { background: var(--accent-dim); }
 
 #md-preview { overflow-y: auto; background: var(--bg-inset); padding: 16px 20px; font-size: 14px; line-height: 1.6; }
 #md-preview:has(.html-preview-frame) { padding: 0; overflow: hidden; }
