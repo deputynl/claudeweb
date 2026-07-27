@@ -54,15 +54,16 @@ body {
 
 #sidebar {
   width: 220px;
+  flex-shrink: 0;
   background: var(--bg-sidebar);
-  border-right: 1px solid var(--border);
   padding: 16px;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 #sidebar h1 { font-size: 14px; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 12px; }
 #project-list { list-style: none; padding: 0; margin: 0; }
 #project-list li {
-  padding: 8px 10px;
+  padding: 4px 10px;
   border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
@@ -74,6 +75,17 @@ body {
 #project-list li.active { background: var(--accent-dim); color: var(--text); }
 #project-list .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); margin-left: 6px; align-self: center; }
 #project-list .dot.running { background: var(--accent); }
+
+#sidebar-resizer {
+  width: 4px;
+  flex: 0 0 auto;
+  cursor: col-resize;
+  background: var(--border);
+}
+#sidebar-resizer:hover,
+#sidebar-resizer.dragging {
+  background: var(--accent);
+}
 
 #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #empty-state { margin: auto; color: var(--text-faint); }

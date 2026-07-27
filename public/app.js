@@ -275,7 +275,58 @@ document.getElementById('font-size-dec').addEventListener('click', () => setFont
 document.getElementById('font-size-inc').addEventListener('click', () => setFontSize(getFontSize() + FONT_SIZE_STEP));
 updateFontSizeDisplay();
 
+// --- Sidebar resize ---
+const SIDEBAR_WIDTH_KEY = 'claudeweb.sidebarWidth';
+const SIDEBAR_WIDTH_MIN = 160;
+const SIDEBAR_WIDTH_MAX = 480;
+const SIDEBAR_WIDTH_DEFAULT = 220;
+
+function getSidebarWidth() {
+  const stored = parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY), 10);
+  if (Number.isNaN(stored)) return SIDEBAR_WIDTH_DEFAULT;
+  return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, stored));
+}
+
+function setSidebarWidth(width) {
+  const clamped = Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, width));
+  document.getElementById('sidebar').style.width = `${clamped}px`;
+  return clamped;
+}
+
+setSidebarWidth(getSidebarWidth());
+
+const sidebarResizer = document.getElementById('sidebar-resizer');
+sidebarResizer.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  sidebarResizer.classList.add('dragging');
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+
+  const onMouseMove = (moveEvent) => setSidebarWidth(moveEvent.clientX);
+  const onMouseUp = (upEvent) => {
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(setSidebarWidth(upEvent.clientX)));
+    sidebarResizer.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+  };
+  document.addEventListener('mousemove', onMouseMove);
+  document.addEventListener('mouseup', onMouseUp);
+});
+
 let currentTab = 'claude';
+
+// Remember which tab was last open per project, so switching back to a
+// project restores where you left it instead of wherever the tab bar
+// happens to be pointed.
+const PROJECT_LAST_TAB_KEY = 'claudeweb.projectLastTab';
+let projectLastTab = {};
+try {
+  projectLastTab = JSON.parse(localStorage.getItem(PROJECT_LAST_TAB_KEY)) || {};
+} catch {
+  projectLastTab = {};
+}
 
 async function selectProject(name) {
   currentProject = name;
@@ -293,11 +344,12 @@ async function selectProject(name) {
 
   // The shell session is started lazily (only once the Terminal tab is
   // actually opened) rather than eagerly like Claude Code's, so switching
-  // projects just resets it here; ensureShellStarted() re-arms it below.
+  // projects just resets it here; switchTab() re-arms it below if needed.
   const shellFrame = document.getElementById('shell-frame');
   shellFrame.src = 'about:blank';
   delete shellFrame.dataset.loadedFor;
-  if (currentTab === 'shell') await ensureShellStarted();
+
+  switchTab(projectLastTab[name] || 'claude');
 
   await loadFileTree();
   loadProjects(); // refresh running-dot state
@@ -319,6 +371,11 @@ function switchTab(tab) {
   document.getElementById('tab-files').hidden = tab !== 'files';
   if (tab === 'files') codeMirror.refresh();
   if (tab === 'shell') ensureShellStarted();
+
+  if (currentProject) {
+    projectLastTab[currentProject] = tab;
+    localStorage.setItem(PROJECT_LAST_TAB_KEY, JSON.stringify(projectLastTab));
+  }
 }
 
 document.querySelectorAll('.tab-btn').forEach((btn) => {
