@@ -127,7 +127,10 @@ function setViewMode(mode) {
 }
 
 document.querySelectorAll('#md-toggle .seg-btn').forEach((btn) => {
-  btn.addEventListener('click', () => setViewMode(btn.dataset.mode));
+  btn.addEventListener('click', () => {
+    setViewMode(btn.dataset.mode);
+    rememberCurrentFile();
+  });
 });
 
 // --- Word wrap ---
@@ -362,6 +365,27 @@ try {
   projectLastTab = {};
 }
 
+// Remember which file (and code/preview mode) was last open per project, so
+// coming back to a project restores the file pane instead of showing it
+// blank - see rememberCurrentFile()/restoreLastFile().
+const PROJECT_LAST_FILE_KEY = 'claudeweb.projectLastFile';
+let projectLastFile = {};
+try {
+  projectLastFile = JSON.parse(localStorage.getItem(PROJECT_LAST_FILE_KEY)) || {};
+} catch {
+  projectLastFile = {};
+}
+
+function rememberCurrentFile() {
+  if (!currentProject) return;
+  if (currentFile) {
+    projectLastFile[currentProject] = { path: currentFile, viewMode };
+  } else {
+    delete projectLastFile[currentProject];
+  }
+  localStorage.setItem(PROJECT_LAST_FILE_KEY, JSON.stringify(projectLastFile));
+}
+
 async function selectProject(name) {
   currentProject = name;
   currentFile = null;
@@ -400,7 +424,25 @@ async function selectProject(name) {
   switchTab(projectLastTab[name] || 'claude');
 
   await loadFileTree();
+  await restoreLastFile();
   loadProjects(); // refresh running-dot state
+}
+
+// Reopens whatever file (and code/preview mode) was last viewed in this
+// project, if any and if it still exists.
+async function restoreLastFile() {
+  const remembered = projectLastFile[currentProject];
+  if (!remembered) return;
+  const project = currentProject;
+  await openFile(remembered.path);
+  if (project !== currentProject) return; // switched away mid-fetch
+  // openFile() already defaulted viewMode (and re-persisted it via
+  // rememberCurrentFile()) based on the file type - override to the
+  // actually-remembered mode and re-persist so it isn't clobbered.
+  if (currentRenderer && remembered.viewMode && remembered.viewMode !== viewMode) {
+    setViewMode(remembered.viewMode);
+    rememberCurrentFile();
+  }
 }
 
 async function ensureClaudeStarted() {
@@ -501,7 +543,17 @@ async function openFile(relPath) {
   // Bail if the user switched projects while this request was in flight -
   // otherwise a slow fetch for a previous project can land after the switch
   // and render that project's file content into the new project's editor.
-  if (!res.ok || project !== currentProject) return;
+  if (project !== currentProject) return;
+  if (!res.ok) {
+    // File no longer exists (e.g. deleted since it was remembered) - drop
+    // any stale "last open file" entry so future project switches don't
+    // keep retrying it.
+    if (projectLastFile[project]) {
+      delete projectLastFile[project];
+      localStorage.setItem(PROJECT_LAST_FILE_KEY, JSON.stringify(projectLastFile));
+    }
+    return;
+  }
   const data = await res.json();
   currentFile = relPath;
   document.getElementById('file-path').textContent = relPath;
@@ -517,6 +569,7 @@ async function openFile(relPath) {
   currentRenderer = rendererForPath(relPath);
   document.getElementById('md-toggle').hidden = !currentRenderer;
   setViewMode(currentRenderer ? 'preview' : 'code');
+  rememberCurrentFile();
 }
 
 document.getElementById('save-btn').addEventListener('click', async () => {
@@ -542,5 +595,28 @@ document.getElementById('download-btn').addEventListener('click', () => {
   a.remove();
   URL.revokeObjectURL(url);
 });
+
+document.getElementById('refresh-files-btn').addEventListener('click', () => refreshFiles());
+
+// Reloads the tree from disk and, if a file is open, re-fetches its content
+// too (discarding any unsaved edits) so the pane reflects what's on disk.
+async function refreshFiles() {
+  if (!currentProject) return;
+  const btn = document.getElementById('refresh-files-btn');
+  btn.classList.remove('spinning');
+  void btn.offsetWidth; // restart the CSS animation if it's already spinning
+  btn.classList.add('spinning');
+
+  await loadFileTree();
+  if (currentFile) {
+    const path = currentFile;
+    const mode = viewMode;
+    await openFile(path);
+    if (currentRenderer && mode !== viewMode) {
+      setViewMode(mode);
+      rememberCurrentFile();
+    }
+  }
+}
 
 loadProjects();

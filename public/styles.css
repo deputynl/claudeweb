@@ -114,7 +114,20 @@ body {
 .tab-panel[hidden] { display: none; }
 #claude-frame, #shell-frame { border: none; width: 100%; height: 100%; }
 
-#file-tree { width: 260px; overflow-y: auto; border-right: 1px solid var(--border); padding: 8px; font-size: 13px; }
+#file-tree-pane { width: 260px; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border); min-height: 0; }
+#file-tree-header {
+  display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+  padding: 6px 8px; border-bottom: 1px solid var(--border);
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint);
+}
+#refresh-files-btn {
+  background: none; border: none; color: var(--text-faint); cursor: pointer;
+  padding: 3px; border-radius: 4px; display: flex; align-items: center;
+}
+#refresh-files-btn:hover { background: var(--bg-panel); color: var(--text); }
+#refresh-files-btn.spinning svg { animation: refresh-spin 0.6s linear; }
+@keyframes refresh-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+#file-tree { flex: 1; overflow-y: auto; padding: 8px; font-size: 13px; min-height: 0; }
 #file-tree ul { list-style: none; padding-left: 14px; margin: 0; }
 #file-tree li { cursor: pointer; padding: 2px 4px; white-space: nowrap; color: var(--text-dim); }
 #file-tree li:hover { color: var(--text); }
@@ -169,10 +182,17 @@ body {
 #code-editor .cm-selectionBackground, #code-editor .cm-content ::selection { background: var(--accent-dim) !important; }
 #code-editor .cm-matchingBracket, #code-editor .cm-nonmatchingBracket { color: var(--accent); background: transparent; font-weight: 600; }
 
-/* CM6's built-in search/replace panel (@codemirror/search) */
+/* CM6's built-in search/replace panel (@codemirror/search). The search/
+   replace inputs never get a `type="text"` attribute set on the DOM node
+   (CM6 relies on the default), so an `input[type="text"]` selector silently
+   never matches - target the library's own `.cm-textfield` class instead.
+   Without this, CM6's built-in light-theme base style (white background,
+   inherited light text) wins, making typed text unreadable. `color-scheme`
+   additionally makes the native checkboxes render as dark-mode controls. */
+#code-editor { color-scheme: dark; }
 #code-editor .cm-panels { background: var(--bg-panel); color: var(--text); }
 #code-editor .cm-panel.cm-search { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-top: 1px solid var(--border); font-size: 12px; }
-#code-editor .cm-panel.cm-search input[type="text"] {
+#code-editor .cm-panel.cm-search .cm-textfield {
   background: var(--bg-inset); color: var(--text); border: 1px solid var(--border);
   border-radius: 4px; padding: 3px 6px; font-size: 12px;
 }
@@ -182,6 +202,7 @@ body {
 }
 #code-editor .cm-panel.cm-search button:hover { background: var(--border); }
 #code-editor .cm-panel.cm-search label { color: var(--text-dim); display: flex; align-items: center; gap: 3px; }
+#code-editor .cm-panel.cm-search input[type="checkbox"] { accent-color: var(--accent); }
 #code-editor .cm-searchMatch { background: var(--accent-dim); }
 #code-editor .cm-searchMatch.cm-searchMatch-selected { background: var(--accent); color: #1a1a18; }
 #code-editor .cm-selectionMatch { background: var(--accent-dim); }
