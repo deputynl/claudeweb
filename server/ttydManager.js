@@ -90,7 +90,10 @@ async function getOrStartSession(project, kind = 'claude') {
     // don't visually connect, regardless of font/renderer. node:20-slim has
     // no locale configured at all (`locale -a` only lists C/C.utf8/POSIX)
     // and doesn't need one installed - C.utf8 is already there, just unused.
-    env: { ...process.env, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' },
+    // COLORTERM=truecolor tells apps inside the pty (and Claude Code's TUI)
+    // that 24-bit color is supported, instead of falling back to the
+    // 256-color palette.
+    env: { ...process.env, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8', COLORTERM: 'truecolor' },
   });
 
   proc.on('exit', (code) => {
