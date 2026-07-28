@@ -598,6 +598,81 @@ document.getElementById('download-btn').addEventListener('click', () => {
 
 document.getElementById('refresh-files-btn').addEventListener('click', () => refreshFiles());
 
+// --- File upload (drag-and-drop + click-to-browse) ---
+// Uploads always land at the project root (dropped file's own name, no
+// subfolder targeting) - matches what a single whole-pane drop target can
+// unambiguously mean.
+
+const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
+
+async function uploadOneFile(file, overwrite) {
+  const params = new URLSearchParams({ path: file.name });
+  if (overwrite) params.set('overwrite', 'true');
+  return fetch(`/api/upload/${encodeURIComponent(currentProject)}?${params}`, {
+    method: 'POST',
+    // Force a fixed Content-Type rather than trusting file.type, which is
+    // empty for lots of real files (e.g. extensionless or OS-unrecognized) -
+    // an empty header can make some middleware skip body parsing entirely.
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: file,
+  });
+}
+
+async function uploadFiles(fileList) {
+  if (!currentProject) return;
+  let reopenCurrentFile = false;
+  for (const file of Array.from(fileList)) {
+    if (file.size > UPLOAD_MAX_BYTES) {
+      alert(`"${file.name}" is larger than the 20MB upload limit - skipped.`);
+      continue;
+    }
+    let res = await uploadOneFile(file, false);
+    if (res.status === 409) {
+      const ok = confirm(`"${file.name}" already exists in "${currentProject}". Overwrite it?`);
+      if (!ok) continue;
+      res = await uploadOneFile(file, true);
+    }
+    if (!res.ok) {
+      alert(`Failed to upload "${file.name}".`);
+      continue;
+    }
+    if (file.name === currentFile) reopenCurrentFile = true;
+  }
+  await loadFileTree();
+  if (reopenCurrentFile) await openFile(currentFile);
+}
+
+const fileTreePane = document.getElementById('file-tree-pane');
+// dragenter/dragleave fire on every child the pointer crosses, not just the
+// pane itself - a counter (rather than a plain boolean) keeps the highlight
+// on for as long as the pointer is anywhere over the pane's subtree.
+let dragCounter = 0;
+
+fileTreePane.addEventListener('dragenter', (e) => {
+  e.preventDefault();
+  dragCounter++;
+  fileTreePane.classList.add('drag-over');
+});
+// dragover must also be prevented - without it the browser rejects the drop.
+fileTreePane.addEventListener('dragover', (e) => e.preventDefault());
+fileTreePane.addEventListener('dragleave', () => {
+  dragCounter = Math.max(0, dragCounter - 1);
+  if (dragCounter === 0) fileTreePane.classList.remove('drag-over');
+});
+fileTreePane.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dragCounter = 0;
+  fileTreePane.classList.remove('drag-over');
+  if (e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
+});
+
+const fileUploadInput = document.getElementById('file-upload-input');
+document.getElementById('upload-files-btn').addEventListener('click', () => fileUploadInput.click());
+fileUploadInput.addEventListener('change', (e) => {
+  if (e.target.files.length) uploadFiles(e.target.files);
+  e.target.value = ''; // allow re-selecting the same file name again later
+});
+
 // Reloads the tree from disk and, if a file is open, re-fetches its content
 // too (discarding any unsaved edits) so the pane reflects what's on disk.
 async function refreshFiles() {

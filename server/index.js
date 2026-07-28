@@ -79,6 +79,24 @@ app.put('/api/file/:project', (req, res) => {
   }
 });
 
+// Raw binary body, scoped to this route only so it doesn't shadow the
+// express.json() parsing used everywhere else. `type: '*/*'` accepts
+// uploads regardless of the browser-guessed Content-Type (or its absence).
+app.post('/api/upload/:project', express.raw({ limit: '20mb', type: '*/*' }), (req, res) => {
+  try {
+    const dir = safeProjectDir(req.params.project);
+    const relPath = req.query.path;
+    if (!relPath) throw new Error('missing path');
+    if (req.query.overwrite !== 'true' && fileApi.exists(dir, relPath)) {
+      return res.status(409).json({ error: 'exists' });
+    }
+    fileApi.writeFile(dir, relPath, req.body);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // --- Terminal proxies ---
 // /term/<project>/...  -> the project's Claude Code ttyd instance
 // /shell/<project>/... -> a plain shell ttyd instance in the project dir

@@ -46,4 +46,9 @@ function writeFile(projectDir, relPath, content) {
   fs.writeFileSync(file, content, 'utf8');
 }
 
-module.exports = { getTree, readFile, writeFile };
+function exists(projectDir, relPath) {
+  const file = safeResolve(projectDir, relPath);
+  return fs.existsSync(file);
+}
+
+module.exports = { getTree, readFile, writeFile, exists };
