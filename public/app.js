@@ -7,6 +7,12 @@ import {
 let currentProject = null;
 let currentFile = null;
 let viewMode = 'code';
+// Snapshot of currentFile's content as last loaded from disk, so Download
+// can tell whether the buffer has unsaved edits (see download-btn handler).
+let lastLoadedContent = null;
+// Bumped on every openFile() call so a slow/out-of-order response can detect
+// a newer request has since superseded it (see openFile()).
+let openFileRequestId = 0;
 
 // Token colors, matched to the rest of the UI. Chrome (background, gutters,
 // cursor, search panel, ...) is themed with plain CSS in styles.css against
@@ -151,12 +157,22 @@ function setWordWrap(enabled) {
 document.getElementById('wrap-toggle-btn').addEventListener('click', () => setWordWrap(!getWordWrap()));
 updateWrapButton();
 
+// Per-project record of which tmux sessions are already running server-side
+// (independently for 'claude' and 'shell'), refreshed on every loadProjects()
+// call. selectProject() reads this to decide whether to auto-reconnect a
+// pane instead of showing its "click here to start a new session"
+// placeholder - a running session should never require re-starting just to
+// look at it, only a genuinely stopped one should.
+let projectRunningState = {};
+
 async function loadProjects() {
   const res = await fetch('/api/projects');
   const projects = await res.json();
+  projectRunningState = {};
   const list = document.getElementById('project-list');
   list.innerHTML = '';
   for (const p of projects) {
+    projectRunningState[p.name] = { claude: p.running, shell: p.runningShell };
     const li = document.createElement('li');
     li.textContent = p.name;
     li.dataset.name = p.name;
@@ -386,20 +402,16 @@ function rememberCurrentFile() {
   localStorage.setItem(PROJECT_LAST_FILE_KEY, JSON.stringify(projectLastFile));
 }
 
-async function selectProject(name) {
-  currentProject = name;
+// Resets the file editor pane to its empty state - used both when switching
+// projects (so a previous project's file content can never linger on
+// screen) and when closing this project's sessions (see close-sessions-btn
+// handler), which should leave the file pane empty too even though it
+// doesn't touch any tmux session itself. Doesn't touch projectLastFile - the
+// remembered "last open file" survives so re-selecting the project (or
+// refreshing) reopens it, same as before a close.
+function closeFilePane() {
   currentFile = null;
-  document.getElementById('empty-state').hidden = true;
-  document.getElementById('project-view').hidden = false;
-  document.getElementById('current-project').textContent = name;
-  document.querySelectorAll('#project-list li').forEach((li) => {
-    li.classList.toggle('active', li.dataset.name === name);
-  });
-
-  // Reset the file editor pane so a project switch can never leave the
-  // previous project's file content on screen - loadFileTree() below only
-  // rebuilds the tree, it doesn't touch whatever was already open in the
-  // editor.
+  lastLoadedContent = null;
   document.getElementById('file-path').textContent = 'Select a file to view or edit';
   document.getElementById('save-btn').disabled = true;
   document.getElementById('download-btn').disabled = true;
@@ -408,18 +420,51 @@ async function selectProject(name) {
   currentRenderer = null;
   codeMirror.setState(createEditorState(''));
   setViewMode('code');
+  document.querySelectorAll('#file-tree li.selected').forEach((li) => li.classList.remove('selected'));
+}
 
-  // Force a reconnect even if this project's Claude Code session was already
-  // marked loaded (e.g. re-selecting the currently active project).
-  delete document.getElementById('claude-frame').dataset.loadedFor;
-  await ensureClaudeStarted();
+// Shows the iframe for a Claude/Terminal pane once its session has actually
+// been started for the current project, otherwise shows the "click to
+// start" placeholder in its place. Called after anything that can change
+// that state: selecting a project, starting a session, or closing sessions.
+function updateSessionPlaceholder(kind) {
+  const frame = document.getElementById(kind === 'shell' ? 'shell-frame' : 'claude-frame');
+  const placeholder = document.getElementById(kind === 'shell' ? 'shell-start-placeholder' : 'claude-start-placeholder');
+  const started = !!currentProject && frame.dataset.loadedFor === currentProject;
+  frame.hidden = !started;
+  placeholder.hidden = started;
+}
 
-  // The shell session is started lazily (only once the Terminal tab is
-  // actually opened) rather than eagerly like Claude Code's, so switching
-  // projects just resets it here; switchTab() re-arms it below if needed.
+async function selectProject(name) {
+  currentProject = name;
+  document.getElementById('empty-state').hidden = true;
+  document.getElementById('project-view').hidden = false;
+  document.getElementById('current-project').textContent = name;
+  document.querySelectorAll('#project-list li').forEach((li) => {
+    li.classList.toggle('active', li.dataset.name === name);
+  });
+
+  closeFilePane();
+
+  // Selecting a project never *starts* a fresh Claude/Shell session on its
+  // own (that used to happen here and was surprising - e.g. it fired even
+  // when you just wanted to browse files) - that only happens from the
+  // "click here to start a new session" placeholder buttons below. But if a
+  // session is already running server-side (tmux sessions outlive a project
+  // switch - see stopProjectSessions()'s doc comment), reconnect to it
+  // automatically rather than making the user re-click "start" just to look
+  // at something that's already going.
+  const claudeFrame = document.getElementById('claude-frame');
+  claudeFrame.src = 'about:blank';
+  delete claudeFrame.dataset.loadedFor;
   const shellFrame = document.getElementById('shell-frame');
   shellFrame.src = 'about:blank';
   delete shellFrame.dataset.loadedFor;
+  const running = projectRunningState[name] || {};
+  if (running.claude) await ensureClaudeStarted();
+  if (running.shell) await ensureShellStarted();
+  updateSessionPlaceholder('claude');
+  updateSessionPlaceholder('shell');
 
   switchTab(projectLastTab[name] || 'claude');
 
@@ -461,6 +506,18 @@ async function ensureShellStarted() {
   frame.dataset.loadedFor = currentProject;
 }
 
+document.getElementById('claude-start-btn').addEventListener('click', async () => {
+  await ensureClaudeStarted();
+  updateSessionPlaceholder('claude');
+  loadProjects(); // refresh running-dot state
+});
+
+document.getElementById('shell-start-btn').addEventListener('click', async () => {
+  await ensureShellStarted();
+  updateSessionPlaceholder('shell');
+  loadProjects(); // refresh running state
+});
+
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
@@ -468,8 +525,9 @@ function switchTab(tab) {
   document.getElementById('tab-shell').hidden = tab !== 'shell';
   document.getElementById('tab-files').hidden = tab !== 'files';
   if (tab === 'files') codeMirror.requestMeasure();
-  if (tab === 'claude') ensureClaudeStarted();
-  if (tab === 'shell') ensureShellStarted();
+  // Note: switching to the Claude/Terminal tab deliberately does NOT start a
+  // session - that only happens when the user clicks that pane's "click
+  // here to start a new session" placeholder button (below).
 
   if (currentProject) {
     projectLastTab[currentProject] = tab;
@@ -481,10 +539,14 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
 
-// Ends both tmux sessions (Claude Code + Terminal) for the current project.
-// Sessions are left stopped rather than immediately restarted - the frames
-// go blank and ensureClaudeStarted()/ensureShellStarted() lazily reconnect
-// the next time their tab is (re-)selected, same as a normal cold start.
+// Ends both tmux sessions (Claude Code + Terminal) for the current project,
+// and closes the file pane too even though it's not a tmux session itself -
+// "close" should leave the whole project view empty, not just the
+// terminals. Sessions are left stopped rather than immediately restarted -
+// the "click here to start a new session" placeholder takes the iframes'
+// place (see updateSessionPlaceholder()) until the user explicitly starts
+// one again; the file pane repopulates on its own next time the project is
+// (re-)selected (see restoreLastFile()), no click-to-start needed there.
 document.getElementById('close-sessions-btn').addEventListener('click', async () => {
   if (!currentProject) return;
   const ok = confirm(`Close all tmux sessions for "${currentProject}"? This ends the running Claude Code process and terminal for this project.`);
@@ -499,6 +561,10 @@ document.getElementById('close-sessions-btn').addEventListener('click', async ()
   const shellFrame = document.getElementById('shell-frame');
   shellFrame.src = 'about:blank';
   delete shellFrame.dataset.loadedFor;
+
+  updateSessionPlaceholder('claude');
+  updateSessionPlaceholder('shell');
+  closeFilePane();
 
   loadProjects();
 });
@@ -539,11 +605,12 @@ function renderTree(nodes) {
 
 async function openFile(relPath) {
   const project = currentProject;
+  const requestId = ++openFileRequestId;
   const res = await fetch(`/api/file/${encodeURIComponent(project)}?path=${encodeURIComponent(relPath)}`);
-  // Bail if the user switched projects while this request was in flight -
-  // otherwise a slow fetch for a previous project can land after the switch
-  // and render that project's file content into the new project's editor.
-  if (project !== currentProject) return;
+  // Bail if the user switched projects, or clicked another file, while this
+  // request was in flight - otherwise a slow/out-of-order fetch can land
+  // after a newer one and render the wrong content into the editor.
+  if (project !== currentProject || requestId !== openFileRequestId) return;
   if (!res.ok) {
     // File no longer exists (e.g. deleted since it was remembered) - drop
     // any stale "last open file" entry so future project switches don't
@@ -556,6 +623,7 @@ async function openFile(relPath) {
   }
   const data = await res.json();
   currentFile = relPath;
+  lastLoadedContent = data.content;
   document.getElementById('file-path').textContent = relPath;
   document.getElementById('save-btn').disabled = false;
   document.getElementById('download-btn').disabled = false;
@@ -580,20 +648,48 @@ document.getElementById('save-btn').addEventListener('click', async () => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path: currentFile, content }),
   });
+  if (res.ok) lastLoadedContent = content;
   document.getElementById('save-status').textContent = res.ok ? 'Saved' : 'Save failed';
 });
 
-document.getElementById('download-btn').addEventListener('click', () => {
-  if (!currentFile) return;
-  const blob = new Blob([codeMirror.state.doc.toString()], { type: 'text/plain' });
+function downloadContent(filename, content) {
+  const blob = new Blob([content], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = currentFile.split('/').pop();
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+document.getElementById('download-btn').addEventListener('click', async () => {
+  if (!currentFile) return;
+  const filename = currentFile.split('/').pop();
+  const bufferContent = codeMirror.state.doc.toString();
+  // The editor buffer is only loaded once, when the file is opened - it isn't
+  // kept in sync with disk. If the buffer has no unsaved edits (matches what
+  // was last loaded), re-fetch from disk first so a Download doesn't hand
+  // back a stale snapshot if the file changed on disk since it was opened
+  // (e.g. edited from the Terminal/Claude tab). If the buffer *does* have
+  // unsaved edits, download those instead of silently discarding them.
+  if (bufferContent === lastLoadedContent) {
+    const path = currentFile;
+    const project = currentProject;
+    try {
+      const res = await fetch(`/api/file/${encodeURIComponent(project)}?path=${encodeURIComponent(path)}`);
+      if (res.ok && path === currentFile && project === currentProject) {
+        const data = await res.json();
+        downloadContent(filename, data.content);
+        return;
+      }
+    } catch {
+      // Fall through to downloading the buffer content below if the
+      // re-fetch fails (e.g. offline) - a slightly stale download beats none.
+    }
+  }
+  downloadContent(filename, bufferContent);
 });
 
 document.getElementById('refresh-files-btn').addEventListener('click', () => refreshFiles());

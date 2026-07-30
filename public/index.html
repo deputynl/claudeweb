@@ -25,11 +25,17 @@
       </div>
 
       <div id="tab-claude" class="tab-panel">
-        <iframe id="claude-frame" title="Claude Code terminal"></iframe>
+        <iframe id="claude-frame" title="Claude Code terminal" hidden></iframe>
+        <div id="claude-start-placeholder" class="session-placeholder">
+          <button id="claude-start-btn" class="start-session-btn">Click here to start a new session</button>
+        </div>
       </div>
 
       <div id="tab-shell" class="tab-panel" hidden>
-        <iframe id="shell-frame" title="Shell terminal"></iframe>
+        <iframe id="shell-frame" title="Shell terminal" hidden></iframe>
+        <div id="shell-start-placeholder" class="session-placeholder">
+          <button id="shell-start-btn" class="start-session-btn">Click here to start a new session</button>
+        </div>
       </div>
 
       <div id="tab-files" class="tab-panel" hidden>

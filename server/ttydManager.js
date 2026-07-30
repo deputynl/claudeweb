@@ -134,6 +134,7 @@ function listProjects() {
     .map((d) => ({
       name: d.name,
       running: sessions.has(`${d.name}:claude`),
+      runningShell: sessions.has(`${d.name}:shell`),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
