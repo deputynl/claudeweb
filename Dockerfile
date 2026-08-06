@@ -8,15 +8,22 @@ ARG TARGETARCH
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       curl ca-certificates tmux openssh-client nano \
-    && case "${TARGETARCH}" in \
+    && rm -rf /var/lib/apt/lists/*
+
+# Cache-busted on purpose: ttyd's "latest" release and the Claude Code
+# installer both resolve to whatever is newest *at build time*, but Docker
+# layer caching would otherwise reuse a stale layer from a previous build
+# and silently skip re-fetching them. Passing a fresh CACHEBUST value
+# (e.g. --build-arg CACHEBUST=$(date +%s)) forces this layer to always rerun.
+ARG CACHEBUST=0
+RUN case "${TARGETARCH}" in \
          amd64) TTYD_ARCH=x86_64 ;; \
          arm64) TTYD_ARCH=aarch64 ;; \
          *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
        esac \
     && curl -fsSL "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.${TTYD_ARCH}" -o /usr/local/bin/ttyd \
     && chmod +x /usr/local/bin/ttyd \
-    && curl -fsSL https://claude.ai/install.sh | bash \
-    && rm -rf /var/lib/apt/lists/*
+    && curl -fsSL https://claude.ai/install.sh | bash
 
 # The native installer puts the binary in ~/.local/bin, which is what your
 # host's ~/.claude.json expects if you installed Claude Code the same way
