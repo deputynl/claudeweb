@@ -648,8 +648,17 @@ document.getElementById('save-btn').addEventListener('click', async () => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path: currentFile, content }),
   });
-  if (res.ok) lastLoadedContent = content;
-  document.getElementById('save-status').textContent = res.ok ? 'Saved' : 'Save failed';
+  if (res.ok) {
+    lastLoadedContent = content;
+    document.getElementById('save-status').textContent = 'Saved';
+    return;
+  }
+  let message = 'Save failed';
+  try {
+    const data = await res.json();
+    if (data && data.error) message = `Save failed: ${data.error}`;
+  } catch {}
+  document.getElementById('save-status').textContent = message;
 });
 
 function downloadContent(filename, content) {
