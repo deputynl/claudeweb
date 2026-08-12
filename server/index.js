@@ -79,18 +79,24 @@ app.put('/api/file/:project', (req, res) => {
   }
 });
 
-// Streams the file's raw bytes with a Content-Disposition: attachment header,
-// instead of round-tripping it through JSON as UTF-8 text (see readFile) -
-// that round-trip silently corrupts binary files (images, zips, etc).
+// Streams the file's raw bytes, instead of round-tripping it through JSON as
+// UTF-8 text (see readFile) - that round-trip silently corrupts binary files
+// (images, zips, etc). Defaults to a Content-Disposition: attachment so
+// clicking Download saves the file; ?inline=true omits that header (via
+// sendFile instead of download) so the response can be used directly as an
+// <img src>, since a forced-download disposition can't be displayed inline.
 app.get('/api/file/:project/raw', (req, res) => {
   try {
     const dir = safeProjectDir(req.params.project);
     const file = fileApi.resolveForDownload(dir, req.query.path);
-    res.download(file, path.basename(file), (err) => {
-      if (err && !res.headersSent) {
-        res.status(404).json({ error: 'file not found' });
-      }
-    });
+    const onErr = (err) => {
+      if (err && !res.headersSent) res.status(404).json({ error: 'file not found' });
+    };
+    if (req.query.inline === 'true') {
+      res.sendFile(file, onErr);
+    } else {
+      res.download(file, path.basename(file), onErr);
+    }
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

@@ -102,9 +102,30 @@ const PREVIEW_RENDERERS = [
     render: (content) =>
       `<iframe class="html-preview-frame" sandbox="allow-scripts allow-forms allow-modals allow-popups" srcdoc="${escapeHtmlAttr(content)}"></iframe>`,
   },
+  {
+    test: (p) => /\.svg$/i.test(p),
+    // SVG is fetched and edited as text like any other source file, but
+    // rendering it requires interpreting markup that can carry <script> or
+    // event-handler attributes - sandbox it the same way as HTML instead of
+    // trusting it via innerHTML on this page's own origin.
+    render: (content) => `<iframe class="html-preview-frame" sandbox="" srcdoc="${escapeHtmlAttr(content)}"></iframe>`,
+  },
 ];
 
 let currentRenderer = null;
+
+// Raster image extensions: unlike text/svg, these are true binary and can't
+// go through the UTF-8 readFile()/content textarea round trip without
+// corruption, so openFile() gives them an entirely separate load path (fetch
+// as a Blob from the raw endpoint, display via object URL) instead of a
+// PREVIEW_RENDERERS entry.
+const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|ico|avif)$/i;
+function isImageFile(relPath) {
+  return IMAGE_EXT_RE.test(relPath);
+}
+// Object URL backing the currently displayed raster image preview, if any -
+// revoked whenever a new file (image or not) is loaded, to avoid leaking it.
+let currentImageUrl = null;
 
 function languageForPath(relPath) {
   const base = relPath.split('/').pop().toLowerCase();
@@ -410,6 +431,7 @@ function rememberCurrentFile() {
 // remembered "last open file" survives so re-selecting the project (or
 // refreshing) reopens it, same as before a close.
 function closeFilePane() {
+  if (currentImageUrl) { URL.revokeObjectURL(currentImageUrl); currentImageUrl = null; }
   currentFile = null;
   lastLoadedContent = null;
   document.getElementById('file-path').textContent = 'Select a file to view or edit';
@@ -606,6 +628,48 @@ function renderTree(nodes) {
 async function openFile(relPath) {
   const project = currentProject;
   const requestId = ++openFileRequestId;
+
+  if (isImageFile(relPath)) {
+    // Raster images can't go through the JSON/UTF-8 text endpoint (see
+    // IMAGE_EXT_RE) - fetch the raw bytes as a Blob and display them via an
+    // object URL instead of loading anything into CodeMirror.
+    const res = await fetch(`/api/file/${encodeURIComponent(project)}/raw?path=${encodeURIComponent(relPath)}&inline=true`);
+    if (project !== currentProject || requestId !== openFileRequestId) return;
+    if (!res.ok) {
+      if (projectLastFile[project]) {
+        delete projectLastFile[project];
+        localStorage.setItem(PROJECT_LAST_FILE_KEY, JSON.stringify(projectLastFile));
+      }
+      return;
+    }
+    const blob = await res.blob();
+    if (project !== currentProject || requestId !== openFileRequestId) return;
+
+    if (currentImageUrl) URL.revokeObjectURL(currentImageUrl);
+    currentImageUrl = URL.createObjectURL(blob);
+
+    currentFile = relPath;
+    lastLoadedContent = null;
+    document.getElementById('file-path').textContent = relPath;
+    // Binary bytes never enter the editor buffer, so there's nothing to Save
+    // from this app - only viewing/downloading is supported for images.
+    document.getElementById('save-btn').disabled = true;
+    document.getElementById('download-btn').disabled = false;
+    document.getElementById('save-status').textContent = '';
+    document.querySelectorAll('#file-tree li').forEach((li) => {
+      if (li.dataset.path) li.classList.toggle('selected', li.dataset.path === relPath);
+    });
+
+    currentRenderer = null;
+    document.getElementById('md-toggle').hidden = true;
+    document.getElementById('md-preview').innerHTML = `<img class="image-preview" src="${currentImageUrl}" alt="${escapeHtmlAttr(relPath)}">`;
+    document.getElementById('code-editor').hidden = true;
+    document.getElementById('md-preview').hidden = false;
+    document.getElementById('wrap-toggle-btn').hidden = true;
+    rememberCurrentFile();
+    return;
+  }
+
   const res = await fetch(`/api/file/${encodeURIComponent(project)}?path=${encodeURIComponent(relPath)}`);
   // Bail if the user switched projects, or clicked another file, while this
   // request was in flight - otherwise a slow/out-of-order fetch can land
@@ -622,6 +686,7 @@ async function openFile(relPath) {
     return;
   }
   const data = await res.json();
+  if (currentImageUrl) { URL.revokeObjectURL(currentImageUrl); currentImageUrl = null; }
   currentFile = relPath;
   lastLoadedContent = data.content;
   document.getElementById('file-path').textContent = relPath;
@@ -676,15 +741,19 @@ function downloadContent(filename, content) {
 document.getElementById('download-btn').addEventListener('click', () => {
   if (!currentFile) return;
   const filename = currentFile.split('/').pop();
-  const bufferContent = codeMirror.state.doc.toString();
-  // The editor buffer is only loaded once, when the file is opened - it isn't
-  // kept in sync with disk. If the buffer has unsaved edits (doesn't match
-  // what was last loaded), download those directly instead of silently
-  // discarding them; this always goes through the text Blob path since the
-  // editor buffer is only ever text.
-  if (bufferContent !== lastLoadedContent) {
-    downloadContent(filename, bufferContent);
-    return;
+  // Raster images never get loaded into the editor buffer (see openFile()),
+  // so it can't hold unsaved edits for them - always hit the raw endpoint.
+  if (!isImageFile(currentFile)) {
+    const bufferContent = codeMirror.state.doc.toString();
+    // The editor buffer is only loaded once, when the file is opened - it
+    // isn't kept in sync with disk. If the buffer has unsaved edits (doesn't
+    // match what was last loaded), download those directly instead of
+    // silently discarding them; this always goes through the text Blob path
+    // since the editor buffer is only ever text.
+    if (bufferContent !== lastLoadedContent) {
+      downloadContent(filename, bufferContent);
+      return;
+    }
   }
   // No unsaved edits - hit the raw endpoint so the server streams the file's
   // actual bytes from disk (correct for binary files, and naturally picks up
