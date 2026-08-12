@@ -51,4 +51,15 @@ function exists(projectDir, relPath) {
   return fs.existsSync(file);
 }
 
-module.exports = { getTree, readFile, writeFile, exists };
+// Unlike readFile(), this doesn't decode the file as UTF-8 text (which
+// corrupts binary content) or enforce MAX_FILE_BYTES - it just resolves and
+// validates the path, and the caller streams the raw bytes from disk.
+function resolveForDownload(projectDir, relPath) {
+  const file = safeResolve(projectDir, relPath);
+  if (!fs.statSync(file).isFile()) {
+    throw new Error('not a file');
+  }
+  return file;
+}
+
+module.exports = { getTree, readFile, writeFile, exists, resolveForDownload };

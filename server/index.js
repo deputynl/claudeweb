@@ -79,6 +79,23 @@ app.put('/api/file/:project', (req, res) => {
   }
 });
 
+// Streams the file's raw bytes with a Content-Disposition: attachment header,
+// instead of round-tripping it through JSON as UTF-8 text (see readFile) -
+// that round-trip silently corrupts binary files (images, zips, etc).
+app.get('/api/file/:project/raw', (req, res) => {
+  try {
+    const dir = safeProjectDir(req.params.project);
+    const file = fileApi.resolveForDownload(dir, req.query.path);
+    res.download(file, path.basename(file), (err) => {
+      if (err && !res.headersSent) {
+        res.status(404).json({ error: 'file not found' });
+      }
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // Raw binary body, scoped to this route only so it doesn't shadow the
 // express.json() parsing used everywhere else. `type: '*/*'` accepts
 // uploads regardless of the browser-guessed Content-Type (or its absence).

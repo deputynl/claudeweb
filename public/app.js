@@ -673,32 +673,34 @@ function downloadContent(filename, content) {
   URL.revokeObjectURL(url);
 }
 
-document.getElementById('download-btn').addEventListener('click', async () => {
+document.getElementById('download-btn').addEventListener('click', () => {
   if (!currentFile) return;
   const filename = currentFile.split('/').pop();
   const bufferContent = codeMirror.state.doc.toString();
   // The editor buffer is only loaded once, when the file is opened - it isn't
-  // kept in sync with disk. If the buffer has no unsaved edits (matches what
-  // was last loaded), re-fetch from disk first so a Download doesn't hand
-  // back a stale snapshot if the file changed on disk since it was opened
-  // (e.g. edited from the Terminal/Claude tab). If the buffer *does* have
-  // unsaved edits, download those instead of silently discarding them.
-  if (bufferContent === lastLoadedContent) {
-    const path = currentFile;
-    const project = currentProject;
-    try {
-      const res = await fetch(`/api/file/${encodeURIComponent(project)}?path=${encodeURIComponent(path)}`);
-      if (res.ok && path === currentFile && project === currentProject) {
-        const data = await res.json();
-        downloadContent(filename, data.content);
-        return;
-      }
-    } catch {
-      // Fall through to downloading the buffer content below if the
-      // re-fetch fails (e.g. offline) - a slightly stale download beats none.
-    }
+  // kept in sync with disk. If the buffer has unsaved edits (doesn't match
+  // what was last loaded), download those directly instead of silently
+  // discarding them; this always goes through the text Blob path since the
+  // editor buffer is only ever text.
+  if (bufferContent !== lastLoadedContent) {
+    downloadContent(filename, bufferContent);
+    return;
   }
-  downloadContent(filename, bufferContent);
+  // No unsaved edits - hit the raw endpoint so the server streams the file's
+  // actual bytes from disk (correct for binary files, and naturally picks up
+  // any changes made on disk since the file was opened, e.g. from the
+  // Terminal/Claude tab). target=_blank keeps an error response (e.g. file
+  // deleted since it was opened) from navigating the app away to raw JSON -
+  // on success the response's Content-Disposition makes the browser download
+  // instead of opening a tab.
+  const url = `/api/file/${encodeURIComponent(currentProject)}/raw?path=${encodeURIComponent(currentFile)}`;
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 });
 
 document.getElementById('refresh-files-btn').addEventListener('click', () => refreshFiles());
